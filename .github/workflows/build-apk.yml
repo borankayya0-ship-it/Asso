@@ -1,0 +1,424 @@
+// ============ FILE: .github/workflows/build-apk.yml ============
+name: Build APK
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: JDK 17 Kur
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - name: Gradle Kur
+        uses: gradle/actions/setup-gradle@v3
+      - name: APK Derle
+        run: gradle assembleDebug
+      - name: APK Yükle
+        uses: actions/upload-artifact@v4
+        with:
+          name: SesliArama-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+
+// ============ FILE: settings.gradle ============
+include ':app'
+
+// ============ FILE: build.gradle ============
+buildscript {
+    dependencies {
+        classpath 'com.google.gms:google-services:4.4.0'
+    }
+}
+plugins {
+    id 'com.android.application' version '8.2.2' apply false
+    id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
+}
+
+// ============ FILE: app/build.gradle ============
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'com.google.gms.google-services'
+}
+android {
+    namespace 'com.example.sesliarama'
+    compileSdk 34
+    defaultConfig {
+        applicationId "com.example.sesliarama"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+dependencies {
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'org.webrtc:google-webrtc:1.0.32006'
+    implementation platform('com.google.firebase:firebase-bom:32.7.0')
+    implementation 'com.google.firebase:firebase-database-ktx'
+}
+
+// ============ FILE: app/src/main/AndroidManifest.xml ============
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <application
+        android:allowBackup="true"
+        android:label="Sesli Arama"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
+
+// ============ FILE: app/src/main/res/layout/activity_main.xml ============
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="20dp">
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="KENDİ NUMARAN (Sahte ID)" android:textStyle="bold" />
+    <EditText android:id="@+id/etMyNumber" android:layout_width="match_parent"
+        android:layout_height="50dp" android:hint="Örn: 5555" android:inputType="number" />
+    <Button android:id="@+id/btnSave" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:text="NUMARAMI KAYDET VE BEKLE" />
+    <View android:layout_width="match_parent" android:layout_height="2dp"
+        android:background="#ccc" android:layout_marginVertical="15dp"/>
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="ARKADAŞININ NUMARASI" android:textStyle="bold" />
+    <EditText android:id="@+id/etFriendNumber" android:layout_width="match_parent"
+        android:layout_height="50dp" android:hint="Örn: 5556" android:inputType="number" />
+    <Button android:id="@+id/btnCall" android:layout_width="match_parent"
+        android:layout_height="60dp" android:text="ARA" android:textSize="18sp" />
+    <TextView android:id="@+id/tvStatus" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:layout_marginTop="20dp"
+        android:text="Durum: Numaranı kaydet" android:textSize="16sp" />
+    <LinearLayout android:id="@+id/layoutIncoming" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:orientation="horizontal"
+        android:visibility="gone" android:layout_marginTop="20dp">
+        <Button android:id="@+id/btnAccept" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="AÇ" />
+        <Button android:id="@+id/btnReject" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="REDDET" />
+    </LinearLayout>
+    <Button android:id="@+id/btnHangup" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:text="KAPAT" android:background="#FF4444"
+        android:layout_marginTop="20dp" android:visibility="gone"/>
+</LinearLayout>
+
+// ============ FILE: app/src/main/java/com/example/sesliarama/MainActivity.kt ============
+package com.example.sesliarama
+
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Bundle
+import android.widget.*
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import com.google.firebase.database.*
+import org.webrtc.*
+import java.util.*
+
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var etMyNumber: EditText
+    private lateinit var etFriendNumber: EditText
+    private lateinit var tvStatus: TextView
+    private lateinit var btnCall: Button
+    private lateinit var btnSave: Button
+    private lateinit var btnHangup: Button
+    private lateinit var btnAccept: Button
+    private lateinit var btnReject: Button
+    private lateinit var layoutIncoming: LinearLayout
+
+    private var myNumber = ""
+    private var currentCallId: String? = null
+    private var isCaller = false
+
+    private lateinit var db: DatabaseReference
+    private var incomingListener: ValueEventListener? = null
+
+    private lateinit var peerConnectionFactory: PeerConnectionFactory
+    private var peerConnection: PeerConnection? = null
+    private lateinit var eglBase: EglBase
+    private var audioSource: AudioSource? = null
+    private var localAudioTrack: AudioTrack? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+
+        etMyNumber = findViewById(R.id.etMyNumber)
+        etFriendNumber = findViewById(R.id.etFriendNumber)
+        tvStatus = findViewById(R.id.tvStatus)
+        btnCall = findViewById(R.id.btnCall)
+        btnSave = findViewById(R.id.btnSave)
+        btnHangup = findViewById(R.id.btnHangup)
+        btnAccept = findViewById(R.id.btnAccept)
+        btnReject = findViewById(R.id.btnReject)
+        layoutIncoming = findViewById(R.id.layoutIncoming)
+
+        db = FirebaseDatabase.getInstance().reference
+        checkAudioPermission()
+        initWebRTC()
+
+        btnSave.setOnClickListener {
+            val num = etMyNumber.text.toString().trim()
+            if (num.length < 3) { Toast.makeText(this,"En az 3 haneli numara yaz",Toast.LENGTH_SHORT).show(); return@setOnClickListener }
+            myNumber = num
+            startListeningForCalls()
+            tvStatus.text = "Durum: $myNumber olarak online. Arama bekleniyor..."
+            Toast.makeText(this,"Kaydedildi",Toast.LENGTH_SHORT).show()
+        }
+
+        btnCall.setOnClickListener {
+            if (myNumber.isEmpty()) { Toast.makeText(this,"Önce kendi numaranı kaydet",Toast.LENGTH_SHORT).show(); return@setOnClickListener }
+            val friend = etFriendNumber.text.toString().trim()
+            if (friend.isEmpty()) return@setOnClickListener
+            makeCall(friend)
+        }
+
+        btnHangup.setOnClickListener { hangup() }
+        btnAccept.setOnClickListener { acceptCall() }
+        btnReject.setOnClickListener { rejectCall() }
+    }
+
+    private fun initWebRTC() {
+        eglBase = EglBase.create()
+        PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(this).createInitializationOptions())
+        val options = PeerConnectionFactory.Options()
+        peerConnectionFactory = PeerConnectionFactory.builder()
+            .setOptions(options)
+            .createPeerConnectionFactory()
+        val audioConstraints = MediaConstraints()
+        audioSource = peerConnectionFactory.createAudioSource(audioConstraints)
+        localAudioTrack = peerConnectionFactory.createAudioTrack("101", audioSource)
+        localAudioTrack?.setEnabled(true)
+    }
+
+    private fun createPeerConnection(callId: String): PeerConnection {
+        val iceServers = listOf(
+            PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
+            PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer()
+        )
+        val rtcConfig = PeerConnection.RTCConfiguration(iceServers)
+        val pc = peerConnectionFactory.createPeerConnection(rtcConfig, object : PeerConnection.Observer {
+            override fun onIceCandidate(candidate: IceCandidate) {
+                val map = mapOf("sdpMid" to candidate.sdpMid, "sdpMLineIndex" to candidate.sdpMLineIndex, "sdp" to candidate.sdp)
+                db.child("calls").child(callId).child("candidates").child(myNumber).push().setValue(map)
+            }
+            override fun onAddStream(stream: MediaStream?) {}
+            override fun onSignalingChange(p0: PeerConnection.SignalingState?) {}
+            override fun onIceConnectionChange(p0: PeerConnection.IceConnectionState?) {
+                if (p0 == PeerConnection.IceConnectionState.CONNECTED) runOnUiThread { tvStatus.text = "Durum: Konuşma başladı!" }
+                if (p0 == PeerConnection.IceConnectionState.DISCONNECTED) runOnUiThread { hangup() }
+            }
+            override fun onIceGatheringChange(p0: PeerConnection.IceGatheringState?) {}
+            override fun onIceCandidatesRemoved(p0: Array<out IceCandidate>?) {}
+            override fun onIceConnectionReceivingChange(p0: Boolean) {}
+            override fun onRemoveStream(p0: MediaStream?) {}
+            override fun onDataChannel(p0: DataChannel?) {}
+            override fun onRenegotiationNeeded() {}
+            override fun onAddTrack(p0: RtpReceiver?, p1: Array<out MediaStream>?) {}
+        })!!
+        pc.addTrack(localAudioTrack)
+        return pc
+    }
+
+    private fun startListeningForCalls() {
+        incomingListener?.let { db.child("users").child(myNumber).child("incoming").removeEventListener(it) }
+        incomingListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val callId = snapshot.getValue(String::class.java) ?: return
+                if (currentCallId != null) return
+                currentCallId = callId
+                isCaller = false
+                tvStatus.text = "Gelen arama var!"
+                layoutIncoming.visibility = LinearLayout.VISIBLE
+                btnHangup.visibility = LinearLayout.VISIBLE
+            }
+            override fun onCancelled(error: DatabaseError) {}
+        }
+        db.child("users").child(myNumber).child("incoming").addValueEventListener(incomingListener!!)
+        listenForRemoteCandidates()
+    }
+
+    private fun makeCall(friendNumber: String) {
+        isCaller = true
+        currentCallId = UUID.randomUUID().toString()
+        val callId = currentCallId!!
+        tvStatus.text = "Aranıyor: $friendNumber..."
+        btnHangup.visibility = LinearLayout.VISIBLE
+        peerConnection = createPeerConnection(callId)
+        listenForAnswer(callId)
+        listenForRemoteCandidates()
+        val constraints = MediaConstraints().apply {
+            mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio","true"))
+            mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo","false"))
+        }
+        peerConnection!!.createOffer(object : SdpObserver {
+            override fun onCreateSuccess(sdp: SessionDescription) {
+                peerConnection!!.setLocalDescription(object : SdpObserver {
+                    override fun onSetSuccess() {
+                        db.child("calls").child(callId).child("offer").setValue(mapOf("type" to sdp.type.canonicalForm(), "sdp" to sdp.description))
+                        db.child("calls").child(callId).child("caller").setValue(myNumber)
+                        db.child("calls").child(callId).child("callee").setValue(friendNumber)
+                        db.child("users").child(friendNumber).child("incoming").setValue(callId)
+                    }
+                    override fun onSetFailure(p0: String?) {}
+                    override fun onCreateSuccess(p0: SessionDescription?) {}
+                    override fun onCreateFailure(p0: String?) {}
+                }, sdp)
+            }
+            override fun onCreateFailure(p0: String?) {}
+            override fun onSetSuccess() {}
+            override fun onSetFailure(p0: String?) {}
+        }, constraints)
+    }
+
+    private fun acceptCall() {
+        val callId = currentCallId ?: return
+        layoutIncoming.visibility = LinearLayout.GONE
+        tvStatus.text = "Arama kabul edildi, bağlanıyor..."
+        peerConnection = createPeerConnection(callId)
+        listenForRemoteCandidates()
+        db.child("calls").child(callId).child("offer").addListenerForSingleValueEvent(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val sdp = snapshot.child("sdp").getValue(String::class.java) ?: return
+                val offer = SessionDescription(SessionDescription.Type.OFFER, sdp)
+                peerConnection!!.setRemoteDescription(object : SdpObserver {
+                    override fun onSetSuccess() {
+                        val constraints = MediaConstraints().apply {
+                            mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio","true"))
+                        }
+                        peerConnection!!.createAnswer(object : SdpObserver {
+                            override fun onCreateSuccess(answer: SessionDescription) {
+                                peerConnection!!.setLocalDescription(object : SdpObserver {
+                                    override fun onSetSuccess() {
+                                        db.child("calls").child(callId).child("answer").setValue(mapOf("type" to answer.type.canonicalForm(), "sdp" to answer.description))
+                                    }
+                                    override fun onSetFailure(p0: String?) {}
+                                    override fun onCreateSuccess(p0: SessionDescription?) {}
+                                    override fun onCreateFailure(p0: String?) {}
+                                }, answer)
+                            }
+                            override fun onCreateFailure(p0: String?) {}
+                            override fun onSetSuccess() {}
+                            override fun onSetFailure(p0: String?) {}
+                        }, constraints)
+                    }
+                    override fun onSetFailure(p0: String?) {}
+                    override fun onCreateSuccess(p0: SessionDescription?) {}
+                    override fun onCreateFailure(p0: String?) {}
+                }, offer)
+            }
+            override fun onCancelled(error: DatabaseError) {}
+        })
+    }
+
+    private fun listenForAnswer(callId: String) {
+        db.child("calls").child(callId).child("answer").addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val sdp = snapshot.child("sdp").getValue(String::class.java) ?: return
+                if (peerConnection?.remoteDescription != null) return
+                val answer = SessionDescription(SessionDescription.Type.ANSWER, sdp)
+                peerConnection?.setRemoteDescription(object : SdpObserver {
+                    override fun onSetSuccess() {}
+                    override fun onSetFailure(p0: String?) {}
+                    override fun onCreateSuccess(p0: SessionDescription?) {}
+                    override fun onCreateFailure(p0: String?) {}
+                }, answer)
+            }
+            override fun onCancelled(error: DatabaseError) {}
+        })
+    }
+
+    private fun listenForRemoteCandidates() {
+        db.child("calls").addChildEventListener(object : ChildEventListener {
+            override fun onChildAdded(snap: DataSnapshot, p: String?) { listenCandidatesForCall(snap.key!!) }
+            override fun onChildChanged(snap: DataSnapshot, p: String?) {}
+            override fun onChildRemoved(snap: DataSnapshot) {}
+            override fun onChildMoved(snap: DataSnapshot, p: String?) {}
+            override fun onCancelled(error: DatabaseError) {}
+        })
+    }
+
+    private fun listenCandidatesForCall(callId: String) {
+        db.child("calls").child(callId).child("candidates").addChildEventListener(object : ChildEventListener {
+            override fun onChildAdded(parent: DataSnapshot, p: String?) {
+                if (parent.key == myNumber) return
+                parent.children.forEach { child ->
+                    val sdp = child.child("sdp").getValue(String::class.java) ?: return@forEach
+                    val mid = child.child("sdpMid").getValue(String::class.java)
+                    val index = child.child("sdpMLineIndex").getValue(Int::class.java) ?: 0
+                    peerConnection?.addIceCandidate(IceCandidate(mid, index, sdp))
+                }
+            }
+            override fun onChildChanged(s: DataSnapshot, p: String?) { onChildAdded(s,p) }
+            override fun onChildRemoved(s: DataSnapshot) {}
+            override fun onChildMoved(s: DataSnapshot, p: String?) {}
+            override fun onCancelled(e: DatabaseError) {}
+        })
+    }
+
+    private fun hangup() {
+        currentCallId?.let {
+            db.child("calls").child(it).removeValue()
+            db.child("users").child(myNumber).child("incoming").removeValue()
+        }
+        peerConnection?.close(); peerConnection = null
+        currentCallId = null
+        runOnUiThread {
+            layoutIncoming.visibility = LinearLayout.GONE
+            btnHangup.visibility = LinearLayout.GONE
+            tvStatus.text = "Kapandı. Tekrar arayabilirsin."
+        }
+    }
+
+    private fun rejectCall() {
+        currentCallId?.let { db.child("calls").child(it).removeValue() }
+        db.child("users").child(myNumber).child("incoming").removeValue()
+        currentCallId = null
+        layoutIncoming.visibility = LinearLayout.GONE
+        btnHangup.visibility = LinearLayout.GONE
+        tvStatus.text = "Reddedildi"
+    }
+
+    private fun checkAudioPermission() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 101)
+        }
+    }
+    abstract class SdpObserver : SdpObserver {
+        override fun onCreateSuccess(p0: SessionDescription?) {}
+        override fun onSetSuccess() {}
+        override fun onCreateFailure(p0: String?) {}
+        override fun 
