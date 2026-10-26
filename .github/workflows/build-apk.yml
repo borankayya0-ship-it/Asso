@@ -31,7 +31,7 @@ jobs:
           mkdir -p app/src/main/res/layout
           mkdir -p app/src/main/res/values
 
-          # 1. Root build.gradle
+          # 1. Root build.gradle (Hataya sebep olan allprojects kaldırıldı)
           cat << 'EOF' > build.gradle
           buildscript {
               repositories {
@@ -41,12 +41,6 @@ jobs:
               dependencies {
                   classpath 'com.android.tools.build:gradle:8.1.2'
                   classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.0'
-              }
-          }
-          allprojects {
-              repositories {
-                  google()
-                  mavenCentral()
               }
           }
           task clean(type: Delete) {
